@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, ReactElement } from 'react';
 import { analyzePatterns } from '../../lib/patternAnalysis';
+import { fetchTradingPairs } from '../../lib/coinbasePairs';
+import StaticChart from './StaticChart';
 
 declare global {
   interface Window {
@@ -37,6 +39,16 @@ interface PatternAlert {
   };
 }
 
+const TIMEFRAMES = [
+  { label: '1m', value: '1' },
+  { label: '5m', value: '5' },
+  { label: '15m', value: '15' },
+  { label: '1h', value: '60' },
+  { label: '4h', value: '240' },
+  { label: '1D', value: 'D' },
+  { label: '1W', value: 'W' }
+] as const;
+
 const TIMEFRAME_DETAILS = {
   daily: {
     title: 'Daily Timeframe',
@@ -63,7 +75,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId
     script.onload = () => {
       if (window.TradingView) {
         new window.TradingView.widget({
-          "autosize": false,
+          "autosize": true,
           "symbol": `COINBASE:${symbol}`,
           "interval": interval,
           "timezone": "Etc/UTC",
@@ -80,31 +92,10 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId
           "container_id": containerId,
           "hide_volume": true,
           "width": "100%",
-          "height": 600,
-          "save_image": true,
-          "hide_side_toolbar": true,
+          "height": "400",
+          "save_image": false,
+          "hide_side_toolbar": false,
           "range": "3M",
-          "time_frames": [
-            { text: "1D", resolution: "D" },
-            { text: "5D", resolution: "D" },
-            { text: "1M", resolution: "D" },
-            { text: "3M", resolution: "D" },
-            { text: "6M", resolution: "W" },
-            { text: "1Y", resolution: "W" }
-          ],
-          "disabled_features": [
-            "header_symbol_search",
-            "header_compare",
-            "header_settings",
-            "left_toolbar",
-            "widget_logo",
-            "volume_force_overlay",
-            "show_chart_property_page",
-            "create_volume_indicator_by_default"
-          ],
-          "enabled_features": [
-            "use_localstorage_for_settings"
-          ],
           "studies": [],
           "loading_screen": {
             "backgroundColor": "#1e1e1e",
@@ -125,32 +116,9 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId
   }, [symbol, containerId, interval]);
 
   return (
-    <div id={containerId} style={{ height: '600px', width: '100%' }} />
+    <div id={containerId} style={{ height: '400px', width: '100%' }} />
   );
 };
-
-const TOP_CRYPTOS = [
-  'BTC-USD',
-  'ETH-USD',
-  'SOL-USD',
-  'XRP-USD',
-  'DOGE-USD',
-  'ADA-USD',
-  'AVAX-USD',
-  'MATIC-USD',
-  'DOT-USD',
-  'LINK-USD'
-];
-
-const TIMEFRAMES = [
-  { label: '1m', value: '1' },
-  { label: '5m', value: '5' },
-  { label: '15m', value: '15' },
-  { label: '1h', value: '60' },
-  { label: '4h', value: '240' },
-  { label: '1D', value: 'D' },
-  { label: '1W', value: 'W' }
-];
 
 const CryptoChartViewer: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -158,11 +126,25 @@ const CryptoChartViewer: React.FC = () => {
   const [patternAlerts, setPatternAlerts] = useState<PatternAlert[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
+  const [tradingPairs, setTradingPairs] = useState<string[]>([]);
+  const [isLoadingPairs, setIsLoadingPairs] = useState(true);
+  const [liveCharts, setLiveCharts] = useState<Set<string>>(new Set());
   const [scanProgress, setScanProgress] = useState({
     hourly: false,
     sixHour: false,
     daily: false
   });
+
+  useEffect(() => {
+    const loadPairs = async () => {
+      setIsLoadingPairs(true);
+      const pairs = await fetchTradingPairs();
+      setTradingPairs(pairs);
+      setIsLoadingPairs(false);
+    };
+
+    loadPairs();
+  }, []);
 
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleString('en-US', {
@@ -178,7 +160,7 @@ const CryptoChartViewer: React.FC = () => {
     setScanProgress({ hourly: false, sixHour: false, daily: false });
     const alerts: PatternAlert[] = [];
 
-    for (const symbol of TOP_CRYPTOS) {
+    for (const symbol of tradingPairs) {
       const patterns = await analyzePatterns(symbol);
       alerts.push({ symbol, ...patterns });
       
@@ -195,8 +177,22 @@ const CryptoChartViewer: React.FC = () => {
   };
 
   useEffect(() => {
-    scanPatterns();
-  }, []);
+    if (!isLoadingPairs && tradingPairs.length > 0) {
+      scanPatterns();
+    }
+  }, [isLoadingPairs, tradingPairs]);
+
+  const toggleLiveChart = (pair: string) => {
+    setLiveCharts(prev => {
+      const newLiveCharts = new Set(prev);
+      if (newLiveCharts.has(pair)) {
+        newLiveCharts.delete(pair);
+      } else {
+        newLiveCharts.add(pair);
+      }
+      return newLiveCharts;
+    });
+  };
 
   const getPatternName = (pattern: string): string => {
     switch (pattern) {
@@ -281,9 +277,22 @@ const CryptoChartViewer: React.FC = () => {
     );
   };
 
-  const filteredPairs = TOP_CRYPTOS.filter(pair => 
+  const filteredPairs = tradingPairs.filter(pair => 
     pair.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (isLoadingPairs) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#121212]">
+        <div className="flex items-center gap-3 text-gray-400">
+          <svg className="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>Loading trading pairs...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[2400px] mx-auto p-4 bg-[#121212] min-h-screen">
@@ -379,11 +388,18 @@ const CryptoChartViewer: React.FC = () => {
               </a>
             </div>
             <div className="rounded-lg overflow-hidden border border-gray-800">
-              <TradingViewChart 
-                symbol={pair.replace('-', '')} 
-                containerId={`tv_chart_${pair}`}
-                interval={selectedTimeframe}
-              />
+              {liveCharts.has(pair) ? (
+                <TradingViewChart 
+                  symbol={pair.replace('-', '')} 
+                  containerId={`tv_chart_${pair}`}
+                  interval={selectedTimeframe}
+                />
+              ) : (
+                <StaticChart
+                  symbol={pair.replace('-', '')}
+                  onViewLive={() => toggleLiveChart(pair)}
+                />
+              )}
             </div>
           </div>
         ))}
