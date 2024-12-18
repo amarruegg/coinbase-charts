@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, ReactElement } from 'react';
-import { analyzePatterns } from '../../lib/patternAnalysis';
+import { analyzePatterns, DetailedPatternAnalysis, getTopBreakoutCandidates } from '../../lib/patternAnalysis';
 import { fetchTradingPairs } from '../../lib/coinbasePairs';
 import StaticChart from './StaticChart';
 
@@ -124,11 +124,13 @@ const CryptoChartViewer: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('60');
   const [patternAlerts, setPatternAlerts] = useState<PatternAlert[]>([]);
+  const [breakoutCandidates, setBreakoutCandidates] = useState<DetailedPatternAnalysis[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [tradingPairs, setTradingPairs] = useState<string[]>([]);
   const [isLoadingPairs, setIsLoadingPairs] = useState(true);
   const [liveCharts, setLiveCharts] = useState<Set<string>>(new Set());
+  const [expandedCandidate, setExpandedCandidate] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState({
     hourly: false,
     sixHour: false,
@@ -146,42 +148,6 @@ const CryptoChartViewer: React.FC = () => {
     loadPairs();
   }, []);
 
-  const formatDate = (timestamp: number): string => {
-    return new Date(timestamp * 1000).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const scanPatterns = async () => {
-    setIsScanning(true);
-    setScanProgress({ hourly: false, sixHour: false, daily: false });
-    const alerts: PatternAlert[] = [];
-
-    for (const symbol of tradingPairs) {
-      const patterns = await analyzePatterns(symbol);
-      alerts.push({ symbol, ...patterns });
-      
-      setScanProgress(prev => ({
-        hourly: true,
-        sixHour: true,
-        daily: true
-      }));
-    }
-
-    setPatternAlerts(alerts);
-    setLastScanTime(new Date());
-    setIsScanning(false);
-  };
-
-  useEffect(() => {
-    if (!isLoadingPairs && tradingPairs.length > 0) {
-      scanPatterns();
-    }
-  }, [isLoadingPairs, tradingPairs]);
-
   const toggleLiveChart = (pair: string) => {
     setLiveCharts(prev => {
       const newLiveCharts = new Set(prev);
@@ -194,27 +160,37 @@ const CryptoChartViewer: React.FC = () => {
     });
   };
 
-  const getPatternName = (pattern: string): string => {
-    switch (pattern) {
-      case 'ascending_triangle':
-        return 'Ascending Triangle';
-      case 'cup_and_handle':
-        return 'Cup and Handle';
-      default:
-        return pattern;
-    }
+  const scanPatterns = async () => {
+    setIsScanning(true);
+    setScanProgress({ hourly: false, sixHour: false, daily: false });
+    
+    // Get top breakout candidates
+    const candidates = await getTopBreakoutCandidates();
+    setBreakoutCandidates(candidates);
+
+    // Convert detailed analysis to pattern alerts for backward compatibility
+    const alerts: PatternAlert[] = candidates.map(analysis => ({
+      symbol: analysis.symbol,
+      hourly: [],
+      sixHour: [],
+      daily: [],
+      timeframes: {
+        hourly: { startTime: Date.now() / 1000 - 172800, endTime: Date.now() / 1000 },
+        sixHour: { startTime: Date.now() / 1000 - 1036800, endTime: Date.now() / 1000 },
+        daily: { startTime: Date.now() / 1000 - 2592000, endTime: Date.now() / 1000 }
+      }
+    }));
+
+    setPatternAlerts(alerts);
+    setLastScanTime(new Date());
+    setIsScanning(false);
   };
 
-  const renderPatternDetails = (pattern: PatternResult): ReactElement => (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-green-400">•</span>
-      <span className="text-gray-300">{getPatternName(pattern.pattern)}</span>
-      <span className="text-gray-500">|</span>
-      <span className="text-blue-400">{pattern.confidence}% confidence</span>
-      <span className="text-gray-500">|</span>
-      <span className="text-gray-400">{pattern.details}</span>
-    </div>
-  );
+  useEffect(() => {
+    if (!isLoadingPairs && tradingPairs.length > 0) {
+      scanPatterns();
+    }
+  }, [isLoadingPairs, tradingPairs]);
 
   const renderTimeframeSection = (timeframeKey: TimeframeKey, isScanned: boolean, patternKey: keyof Omit<PatternAlert, 'symbol' | 'timeframes'>): ReactElement => {
     const matchingCoins = patternAlerts.filter(alert => alert[patternKey].length > 0);
@@ -277,6 +253,144 @@ const CryptoChartViewer: React.FC = () => {
     );
   };
 
+  const renderPatternDetails = (pattern: PatternResult): ReactElement => (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-green-400">•</span>
+      <span className="text-gray-300">{pattern.pattern}</span>
+      <span className="text-gray-500">|</span>
+      <span className="text-blue-400">{pattern.confidence}% confidence</span>
+      <span className="text-gray-500">|</span>
+      <span className="text-gray-400">{pattern.details}</span>
+    </div>
+  );
+
+  const formatDate = (timestamp: number): string => {
+    return new Date(timestamp * 1000).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+const renderBreakoutCandidates = () => (
+  <div className="mb-8">
+    <h2 className="text-2xl font-bold text-gray-100 mb-4">Top Breakout Candidates</h2>
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+      {breakoutCandidates.map(candidate => (
+        <div 
+          key={candidate.symbol} 
+          className="bg-[#1A1A1A] rounded-lg border border-gray-800/50 overflow-hidden"
+        >
+          {/* Header */}
+          <div className="p-2 border-b border-gray-800/50">
+            <div className="flex items-center gap-1">
+              <h3 className="text-base font-bold text-gray-100">{candidate.symbol}</h3>
+              {candidate.social.volumeChange > 50 && (
+                <span className="text-purple-400 text-sm">🔥</span>
+              )}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="p-2 space-y-2">
+            {/* Confidence & R:R */}
+            <div className="grid grid-cols-2 gap-1 text-xs">
+              <div className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded text-center">
+                {candidate.confidence.toFixed(1)}%
+              </div>
+              <div className="px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded text-center">
+                {candidate.breakout.riskRewardRatio.toFixed(1)}x
+              </div>
+            </div>
+
+            {/* Timeframes */}
+            <div className="grid grid-cols-3 gap-1 text-[10px]">
+              <div className="text-center">
+                <div className="text-gray-500">24h</div>
+                <div className="text-gray-200">{candidate.breakout.timeframes.hourly.toFixed(1)}%</div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-500">7d</div>
+                <div className="text-gray-200">{candidate.breakout.timeframes.sixHour.toFixed(1)}%</div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-500">30d</div>
+                <div className="text-gray-200">{candidate.breakout.timeframes.daily.toFixed(1)}%</div>
+              </div>
+            </div>
+
+            {/* Key Levels */}
+            <div className="grid grid-cols-3 gap-1 text-[10px] pt-1 border-t border-gray-800/50">
+              <div className="text-center">
+                <div className="text-gray-500">Support</div>
+                <div className="text-gray-200">${candidate.breakout.support.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-500">Resist</div>
+                <div className="text-gray-200">${candidate.breakout.resistance.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-500">Stop</div>
+                <div className="text-gray-200">${candidate.breakout.stopLoss.toFixed(2)}</div>
+              </div>
+            </div>
+
+            {/* Target */}
+            <div className="grid grid-cols-3 gap-1 text-[10px] pt-1 border-t border-gray-800/50">
+              <div className="text-center">
+                <div className="text-gray-500">Safe</div>
+                <div className="text-gray-200">${candidate.breakout.targets.conservative.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-500">Target</div>
+                <div className="text-gray-200">${candidate.breakout.targets.moderate.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-gray-500">Max</div>
+                <div className="text-gray-200">${candidate.breakout.targets.aggressive.toFixed(2)}</div>
+              </div>
+            </div>
+
+            {/* Social Stats */}
+            <div className="grid grid-cols-2 gap-1 text-[10px] pt-1 border-t border-gray-800/50">
+              <div>
+                <span className="text-gray-500">Vol:</span>
+                <span className="text-gray-200 ml-1">
+                  {candidate.social.mentionVolume.toLocaleString()}
+                  {candidate.social.volumeChange > 0 && (
+                    <span className="text-green-400 ml-0.5">
+                      (+{candidate.social.volumeChange.toFixed(1)}%)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Sent:</span>
+                <span className={`ml-1 ${
+                  candidate.social.sentimentScore > 0 ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {(candidate.social.sentimentScore * 100).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Analysis Points */}
+            <div className="space-y-0.5 text-[10px] pt-1 border-t border-gray-800/50">
+              {candidate.reasoning.map((reason, idx) => (
+                <div key={idx} className="flex items-center gap-1">
+                  <span className="text-green-400">•</span>
+                  <span className="text-gray-300">{reason}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
   const filteredPairs = tradingPairs.filter(pair => 
     pair.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -336,6 +450,9 @@ const CryptoChartViewer: React.FC = () => {
           {renderTimeframeSection('hourly', scanProgress.hourly, 'hourly')}
         </div>
       </div>
+
+      {/* Breakout Candidates Section */}
+      {renderBreakoutCandidates()}
 
       {/* Charts Controls */}
       <div className="mb-6">
