@@ -13,6 +13,8 @@ interface PatternResult {
   details: string;
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const analyzeAscendingTriangle = (candles: CandleData[]): PatternResult | null => {
   if (candles.length < 20) return null;
 
@@ -115,18 +117,29 @@ export const analyzeCupAndHandle = (candles: CandleData[]): PatternResult | null
 
 export const analyzePatterns = async (symbol: string): Promise<PatternResult[]> => {
   try {
-    // Fetch historical data from Coinbase API
-    const response = await fetch(`https://api.pro.coinbase.com/products/${symbol}/candles?granularity=86400`);
-    const data: [number, number, number, number, number, number][] = await response.json();
+    // Use Coinbase Exchange API v3
+    const response = await fetch(`https://api.exchange.coinbase.com/products/${symbol}/candles?granularity=86400&limit=30`);
+    
+    if (!response.ok) {
+      if (response.status === 429) {
+        // Rate limit hit, wait and retry
+        await sleep(1000);
+        return analyzePatterns(symbol);
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const rawData = await response.json();
     
     // Convert to CandleData format
-    const candles: CandleData[] = data.map(([time, open, high, low, close, volume]) => ({
-      time,
-      open,
-      high,
-      low,
-      close,
-      volume
+    // Coinbase format: [timestamp, open, high, low, close, volume]
+    const candles: CandleData[] = rawData.map((d: number[]) => ({
+      time: d[0],
+      open: d[1],
+      high: d[2],
+      low: d[3],
+      close: d[4],
+      volume: d[5]
     }));
 
     const patterns: PatternResult[] = [];
@@ -138,6 +151,9 @@ export const analyzePatterns = async (symbol: string): Promise<PatternResult[]> 
     // Check for cup and handle
     const cupResult = analyzeCupAndHandle(candles);
     if (cupResult) patterns.push(cupResult);
+
+    // Add delay between API calls to avoid rate limiting
+    await sleep(300);
 
     return patterns;
   } catch (error) {

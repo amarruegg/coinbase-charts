@@ -64,15 +64,26 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId
           "enabled_features": [
             "use_localstorage_for_settings"
           ],
+          "charts_storage_url": "https://saveload.tradingview.com",
+          "charts_storage_api_version": "1.1",
+          "client_id": "tradingview.com",
+          "theme_color": "#1e1e1e",
+          "custom_css_url": "",
+          "loading_screen": {
+            "backgroundColor": "#1e1e1e",
+            "foregroundColor": "#2962FF"
+          },
+          "studies_overrides": {},
           "overrides": {
-            "mainSeriesProperties.candleStyle.upColor": "#26a69a",
-            "mainSeriesProperties.candleStyle.downColor": "#ef5350",
-            "mainSeriesProperties.candleStyle.wickUpColor": "#26a69a",
-            "mainSeriesProperties.candleStyle.wickDownColor": "#ef5350",
+            "symbolWatermarkProperties.color": "rgba(0, 0, 0, 0)",
             "paneProperties.background": "#1e1e1e",
+            "paneProperties.backgroundType": "solid",
             "paneProperties.vertGridProperties.color": "#2a2a2a",
             "paneProperties.horzGridProperties.color": "#2a2a2a",
-            "scalesProperties.textColor": "#999999"
+            "scalesProperties.textColor": "#999999",
+            "scalesProperties.backgroundColor": "#1e1e1e",
+            "mainSeriesProperties.style": 1,
+            "mainSeriesProperties.showCountdown": false
           }
         });
       }
