@@ -11,6 +11,23 @@ interface PatternResult {
   pattern: 'ascending_triangle' | 'cup_and_handle';
   confidence: number;
   details: string;
+  timeframe: '1h' | '6h' | '1d';
+}
+
+interface TimeframeInfo {
+  startTime: number;
+  endTime: number;
+}
+
+interface PatternAnalysisResult {
+  hourly: PatternResult[];
+  sixHour: PatternResult[];
+  daily: PatternResult[];
+  timeframes: {
+    hourly: TimeframeInfo;
+    sixHour: TimeframeInfo;
+    daily: TimeframeInfo;
+  };
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -52,7 +69,8 @@ export const analyzeAscendingTriangle = (candles: CandleData[]): PatternResult |
     return {
       pattern: 'ascending_triangle',
       confidence,
-      details: `Found ${resistanceTouches} resistance touches with higher lows`
+      details: `Found ${resistanceTouches} resistance touches with higher lows`,
+      timeframe: '1d' // Will be overwritten by the calling function
     };
   }
 
@@ -108,56 +126,94 @@ export const analyzeCupAndHandle = (candles: CandleData[]): PatternResult | null
     return {
       pattern: 'cup_and_handle',
       confidence,
-      details: `Found U-shape formation with handle`
+      details: `Found U-shape formation with handle`,
+      timeframe: '1d' // Will be overwritten by the calling function
     };
   }
 
   return null;
 };
 
-export const analyzePatterns = async (symbol: string): Promise<PatternResult[]> => {
-  try {
-    // Use Coinbase Exchange API v3
-    const response = await fetch(`https://api.exchange.coinbase.com/products/${symbol}/candles?granularity=86400&limit=30`);
-    
-    if (!response.ok) {
-      if (response.status === 429) {
-        // Rate limit hit, wait and retry
-        await sleep(1000);
-        return analyzePatterns(symbol);
-      }
-      throw new Error(`HTTP error! status: ${response.status}`);
+const fetchCandles = async (symbol: string, granularity: number): Promise<CandleData[]> => {
+  const response = await fetch(
+    `https://api.exchange.coinbase.com/products/${symbol}/candles?granularity=${granularity}&limit=300`
+  );
+  
+  if (!response.ok) {
+    if (response.status === 429) {
+      await sleep(1000);
+      return fetchCandles(symbol, granularity);
     }
-    
-    const rawData = await response.json();
-    
-    // Convert to CandleData format
-    // Coinbase format: [timestamp, open, high, low, close, volume]
-    const candles: CandleData[] = rawData.map((d: number[]) => ({
-      time: d[0],
-      open: d[1],
-      high: d[2],
-      low: d[3],
-      close: d[4],
-      volume: d[5]
-    }));
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  
+  const rawData = await response.json();
+  
+  return rawData.map((d: number[]) => ({
+    time: d[0],
+    open: d[1],
+    high: d[2],
+    low: d[3],
+    close: d[4],
+    volume: d[5]
+  }));
+};
 
-    const patterns: PatternResult[] = [];
-
-    // Check for ascending triangle
-    const triangleResult = analyzeAscendingTriangle(candles);
-    if (triangleResult) patterns.push(triangleResult);
-
-    // Check for cup and handle
-    const cupResult = analyzeCupAndHandle(candles);
-    if (cupResult) patterns.push(cupResult);
-
-    // Add delay between API calls to avoid rate limiting
+export const analyzePatterns = async (symbol: string): Promise<PatternAnalysisResult> => {
+  try {
+    // Fetch data for different timeframes
+    const hourlyCandles = await fetchCandles(symbol, 3600); // 1 hour
     await sleep(300);
+    const sixHourCandles = await fetchCandles(symbol, 21600); // 6 hours
+    await sleep(300);
+    const dailyCandles = await fetchCandles(symbol, 86400); // 1 day
 
-    return patterns;
+    const getTimeframeInfo = (candles: CandleData[]): TimeframeInfo => ({
+      startTime: Math.min(...candles.map(c => c.time)),
+      endTime: Math.max(...candles.map(c => c.time))
+    });
+
+    const results = {
+      hourly: [] as PatternResult[],
+      sixHour: [] as PatternResult[],
+      daily: [] as PatternResult[],
+      timeframes: {
+        hourly: getTimeframeInfo(hourlyCandles),
+        sixHour: getTimeframeInfo(sixHourCandles),
+        daily: getTimeframeInfo(dailyCandles)
+      }
+    };
+
+    // Analyze hourly patterns
+    const hourlyTriangle = analyzeAscendingTriangle(hourlyCandles);
+    const hourlyCup = analyzeCupAndHandle(hourlyCandles);
+    if (hourlyTriangle) results.hourly.push({ ...hourlyTriangle, timeframe: '1h' });
+    if (hourlyCup) results.hourly.push({ ...hourlyCup, timeframe: '1h' });
+
+    // Analyze 6-hour patterns
+    const sixHourTriangle = analyzeAscendingTriangle(sixHourCandles);
+    const sixHourCup = analyzeCupAndHandle(sixHourCandles);
+    if (sixHourTriangle) results.sixHour.push({ ...sixHourTriangle, timeframe: '6h' });
+    if (sixHourCup) results.sixHour.push({ ...sixHourCup, timeframe: '6h' });
+
+    // Analyze daily patterns
+    const dailyTriangle = analyzeAscendingTriangle(dailyCandles);
+    const dailyCup = analyzeCupAndHandle(dailyCandles);
+    if (dailyTriangle) results.daily.push({ ...dailyTriangle, timeframe: '1d' });
+    if (dailyCup) results.daily.push({ ...dailyCup, timeframe: '1d' });
+
+    return results;
   } catch (error) {
     console.error(`Error analyzing patterns for ${symbol}:`, error);
-    return [];
+    return {
+      hourly: [],
+      sixHour: [],
+      daily: [],
+      timeframes: {
+        hourly: { startTime: 0, endTime: 0 },
+        sixHour: { startTime: 0, endTime: 0 },
+        daily: { startTime: 0, endTime: 0 }
+      }
+    };
   }
 };
