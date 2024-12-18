@@ -36,12 +36,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId
           "hotlist": false,
           "calendar": false,
           "container_id": containerId,
-          "hide_volume": false,
-          "studies": [
-            "Volume@tv-basicstudies",
-            "MASimple@tv-basicstudies",
-            "RSI@tv-basicstudies"
-          ],
+          "hide_volume": true,
           "width": "100%",
           "height": 600,
           "save_image": true,
@@ -51,7 +46,10 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId
             "header_compare",
             "header_settings",
             "left_toolbar",
-            "widget_logo"
+            "widget_logo",
+            "volume_force_overlay",
+            "show_chart_property_page",
+            "create_volume_indicator_by_default"
           ],
           "enabled_features": [
             "use_localstorage_for_settings"
