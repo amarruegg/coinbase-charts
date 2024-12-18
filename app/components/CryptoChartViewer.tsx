@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { analyzePatterns } from '../../lib/patternAnalysis';
 
 declare global {
   interface Window {
@@ -10,6 +11,15 @@ interface TradingViewChartProps {
   symbol: string;
   containerId: string;
   interval: string;
+}
+
+interface PatternAlert {
+  symbol: string;
+  patterns: {
+    pattern: 'ascending_triangle' | 'cup_and_handle';
+    confidence: number;
+    details: string;
+  }[];
 }
 
 const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId, interval }) => {
@@ -108,13 +118,85 @@ const TIMEFRAMES = [
 const CryptoChartViewer: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('60');
+  const [patternAlerts, setPatternAlerts] = useState<PatternAlert[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+
+  const scanPatterns = async () => {
+    setIsScanning(true);
+    const alerts: PatternAlert[] = [];
+
+    for (const symbol of TOP_CRYPTOS) {
+      const patterns = await analyzePatterns(symbol);
+      if (patterns.length > 0) {
+        alerts.push({ symbol, patterns });
+      }
+    }
+
+    setPatternAlerts(alerts);
+    setIsScanning(false);
+  };
+
+  useEffect(() => {
+    scanPatterns();
+  }, []);
 
   const filteredPairs = TOP_CRYPTOS.filter(pair => 
     pair.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const getPatternName = (pattern: string) => {
+    switch (pattern) {
+      case 'ascending_triangle':
+        return 'Ascending Triangle';
+      case 'cup_and_handle':
+        return 'Cup and Handle';
+      default:
+        return pattern;
+    }
+  };
+
   return (
     <div className="max-w-[2400px] mx-auto p-4 bg-[#121212] min-h-screen">
+      {/* Pattern Alerts Section */}
+      <div className="mb-8 p-4 border border-gray-800 rounded-lg bg-[#1e1e1e]">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-gray-100">Pattern Alerts</h2>
+          <button
+            onClick={scanPatterns}
+            disabled={isScanning}
+            className="px-4 py-2 bg-blue-900/30 text-blue-400 rounded-lg hover:bg-blue-900/50 transition-colors disabled:opacity-50"
+          >
+            {isScanning ? 'Scanning...' : 'Scan Now'}
+          </button>
+        </div>
+        {patternAlerts.length > 0 ? (
+          <div className="space-y-4">
+            {patternAlerts.map(alert => (
+              <div key={alert.symbol} className="p-3 border border-gray-800 rounded bg-[#252525]">
+                <h3 className="text-lg font-semibold text-gray-100 mb-2">{alert.symbol}</h3>
+                <div className="space-y-2">
+                  {alert.patterns.map((pattern, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-sm">
+                      <span className="text-green-400">•</span>
+                      <span className="text-gray-300">{getPatternName(pattern.pattern)}</span>
+                      <span className="text-gray-500">|</span>
+                      <span className="text-blue-400">{pattern.confidence}% confidence</span>
+                      <span className="text-gray-500">|</span>
+                      <span className="text-gray-400">{pattern.details}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400">
+            {isScanning ? 'Scanning for patterns...' : 'No pattern alerts detected'}
+          </p>
+        )}
+      </div>
+
+      {/* Charts Controls */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-4 text-gray-100">Live Crypto Charts</h1>
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
@@ -142,6 +224,7 @@ const CryptoChartViewer: React.FC = () => {
         </div>
       </div>
       
+      {/* Charts Grid */}
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {filteredPairs.map(pair => (
           <div key={pair} className="border border-gray-800 rounded-lg p-4 bg-[#1e1e1e]">
