@@ -78,10 +78,10 @@ export const analyzeAscendingTriangle = (candles: CandleData[]): PatternResult |
 };
 
 export const analyzeCupAndHandle = (candles: CandleData[]): PatternResult | null => {
-  if (candles.length < 30) return null;
+  if (candles.length < 20) return null;
 
-  // Look at last 30 candles
-  const recentCandles = candles.slice(-30);
+  // Look at last 20 candles
+  const recentCandles = candles.slice(-20);
   
   // Find potential cup formation
   const prices = recentCandles.map(c => c.close);
@@ -134,15 +134,15 @@ export const analyzeCupAndHandle = (candles: CandleData[]): PatternResult | null
   return null;
 };
 
-const fetchCandles = async (symbol: string, granularity: number): Promise<CandleData[]> => {
+const fetchCandles = async (symbol: string, granularity: number, limit: number): Promise<CandleData[]> => {
   const response = await fetch(
-    `https://api.exchange.coinbase.com/products/${symbol}/candles?granularity=${granularity}&limit=300`
+    `https://api.exchange.coinbase.com/products/${symbol}/candles?granularity=${granularity}&limit=${limit}`
   );
   
   if (!response.ok) {
     if (response.status === 429) {
       await sleep(1000);
-      return fetchCandles(symbol, granularity);
+      return fetchCandles(symbol, granularity, limit);
     }
     throw new Error(`HTTP error! status: ${response.status}`);
   }
@@ -161,12 +161,12 @@ const fetchCandles = async (symbol: string, granularity: number): Promise<Candle
 
 export const analyzePatterns = async (symbol: string): Promise<PatternAnalysisResult> => {
   try {
-    // Fetch data for different timeframes
-    const hourlyCandles = await fetchCandles(symbol, 3600); // 1 hour
+    // Fetch data for different timeframes with specific limits
+    const hourlyCandles = await fetchCandles(symbol, 3600, 48);  // 2 days of hourly data
     await sleep(300);
-    const sixHourCandles = await fetchCandles(symbol, 21600); // 6 hours
+    const sixHourCandles = await fetchCandles(symbol, 21600, 48);  // 12 days of 6-hour data
     await sleep(300);
-    const dailyCandles = await fetchCandles(symbol, 86400); // 1 day
+    const dailyCandles = await fetchCandles(symbol, 86400, 30);  // 30 days of daily data
 
     const getTimeframeInfo = (candles: CandleData[]): TimeframeInfo => ({
       startTime: Math.min(...candles.map(c => c.time)),

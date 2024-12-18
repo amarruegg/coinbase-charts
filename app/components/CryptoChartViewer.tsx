@@ -37,6 +37,23 @@ interface PatternAlert {
   };
 }
 
+const TIMEFRAME_DETAILS = {
+  daily: {
+    title: 'Daily Timeframe',
+    description: '30 days lookback'
+  },
+  sixHour: {
+    title: '6 Hour Timeframe',
+    description: '12 days lookback'
+  },
+  hourly: {
+    title: '1 Hour Timeframe',
+    description: '2 days lookback'
+  }
+} as const;
+
+type TimeframeKey = keyof typeof TIMEFRAME_DETAILS;
+
 const TradingViewChart: React.FC<TradingViewChartProps> = ({ symbol, containerId, interval }) => {
   useEffect(() => {
     const script = document.createElement('script');
@@ -203,22 +220,26 @@ const CryptoChartViewer: React.FC = () => {
     </div>
   );
 
-  const renderTimeframeSection = (title: string, isScanned: boolean, timeframeKey: keyof Omit<PatternAlert, 'symbol' | 'timeframes'>): ReactElement => {
-    const matchingCoins = patternAlerts.filter(alert => alert[timeframeKey].length > 0);
-    const timeframeInfo = patternAlerts[0]?.timeframes?.[timeframeKey];
+  const renderTimeframeSection = (timeframeKey: TimeframeKey, isScanned: boolean, patternKey: keyof Omit<PatternAlert, 'symbol' | 'timeframes'>): ReactElement => {
+    const matchingCoins = patternAlerts.filter(alert => alert[patternKey].length > 0);
+    const timeframeInfo = patternAlerts[0]?.timeframes?.[patternKey];
+    const { title, description } = TIMEFRAME_DETAILS[timeframeKey];
 
     return (
       <div className="flex-1 p-6 bg-[#1A1A1A] rounded-xl border border-gray-800/50 backdrop-blur-sm">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-1 mb-4">
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-blue-500"></div>
             <h3 className="text-lg font-medium text-gray-200">{title}</h3>
           </div>
-          {timeframeInfo && isScanned && (
-            <div className="text-xs text-gray-500">
-              {formatDate(timeframeInfo.startTime)} - {formatDate(timeframeInfo.endTime)}
-            </div>
-          )}
+          <div className="text-xs text-gray-500 ml-4">
+            {description}
+            {timeframeInfo && isScanned && (
+              <span className="block mt-1">
+                {formatDate(timeframeInfo.startTime)} - {formatDate(timeframeInfo.endTime)}
+              </span>
+            )}
+          </div>
         </div>
         {isScanned ? (
           matchingCoins.length > 0 ? (
@@ -231,7 +252,7 @@ const CryptoChartViewer: React.FC = () => {
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {alert[timeframeKey].map((pattern: PatternResult, idx: number) => (
+                    {alert[patternKey].map((pattern: PatternResult, idx: number) => (
                       <div key={idx} className="text-sm">
                         {renderPatternDetails(pattern)}
                       </div>
@@ -301,9 +322,9 @@ const CryptoChartViewer: React.FC = () => {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {renderTimeframeSection('Daily Timeframe', scanProgress.daily, 'daily')}
-          {renderTimeframeSection('6 Hour Timeframe', scanProgress.sixHour, 'sixHour')}
-          {renderTimeframeSection('1 Hour Timeframe', scanProgress.hourly, 'hourly')}
+          {renderTimeframeSection('daily', scanProgress.daily, 'daily')}
+          {renderTimeframeSection('sixHour', scanProgress.sixHour, 'sixHour')}
+          {renderTimeframeSection('hourly', scanProgress.hourly, 'hourly')}
         </div>
       </div>
 
